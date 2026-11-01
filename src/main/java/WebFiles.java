@@ -14,7 +14,9 @@ public final class WebFiles {
     private WebFiles() {}
 
     public static void main(String[] args) throws Exception {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
+        int port = args.length > 0
+        ? Integer.parseInt(args[0])
+        : Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.setExecutor(Executors.newCachedThreadPool());
         server.createContext("/", WebFiles::serve);
