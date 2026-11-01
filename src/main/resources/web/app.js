@@ -210,36 +210,58 @@ ws = new WebSocket(wsUrl);
   function scrollMessages() { messages.scrollTop = messages.scrollHeight; }
   function sendMessage(e) {
     e.preventDefault();
+
     const text = messageInput.value.trim();
+
     if (!text) return;
-    if (text === "/users") { addSystem("Online users are listed in the sidebar."); messageInput.value = ""; return; }
-    if (text === "/help") { addSystem("Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."); messageInput.value = ""; return; }
-    if (text === "/quit") { logout(); return; }
-const privateMatch = text.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/);
 
-if (text.startsWith("/msg ")) {
-    if (!privateMatch) {
-        addSystem("Usage: /msg username message");
+    if (text === "/users") {
+        addSystem("Online users are listed in the sidebar.");
+        messageInput.value = "";
         return;
     }
 
-    const target = privateMatch[1];
-    const privateText = privateMatch[2].trim();
-
-    if (!privateText) {
-        addSystem("Please enter a message.");
+    if (text === "/help") {
+        addSystem(
+            "Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."
+        );
+        messageInput.value = "";
         return;
     }
 
-    if (send(`PM|${target}|${privateText}`)) {
-        messageInput.value = "";
+    if (text === "/quit") {
+        logout();
+        return;
     }
-} else {
-    if (send(`MSG|${text}`)) {
-        messageInput.value = "";
+
+    // Check whether this is a private message.
+    const privateMatch = text.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/);
+
+    if (text.startsWith("/msg ")) {
+        if (!privateMatch) {
+            addSystem("Usage: /msg username message");
+            return;
+        }
+
+        const target = privateMatch[1];
+        const privateText = privateMatch[2].trim();
+
+        if (!privateText) {
+            addSystem("Please enter a message.");
+            return;
+        }
+
+        // Send private message to the server.
+        if (send(`PM|${target}|${privateText}`)) {
+            messageInput.value = "";
+        }
+    } else {
+        // Send public message to everyone.
+        if (send(`MSG|${text}`)) {
+            messageInput.value = "";
+        }
     }
 }
-  }
   $("sendForm").addEventListener("submit", sendMessage);
   $("publicChatBtn").addEventListener("click", () => {
     $("chatHeading").textContent = "Public chat";
