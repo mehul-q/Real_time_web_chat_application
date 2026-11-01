@@ -152,9 +152,15 @@ public class WebGateway extends WebSocketServer {
     }
 
     public static void main(String[] args) throws Exception {
-        int wsPort = args.length > 0 ? Integer.parseInt(args[0]) : 8081;
-        String tcpHost = args.length > 1 ? args[1] : "127.0.0.1";
-        int tcpPort = args.length > 2 ? Integer.parseInt(args[2]) : 12345;
+       int wsPort = args.length > 0
+        ? Integer.parseInt(args[0])
+        : Integer.parseInt(System.getenv().getOrDefault("WS_PORT", "8081"));
+
+String tcpHost = args.length > 1 ? args[1] : "127.0.0.1";
+
+int tcpPort = args.length > 2
+        ? Integer.parseInt(args[2])
+        : Integer.parseInt(System.getenv().getOrDefault("TCP_PORT", "12345"));
         WebGateway gateway = new WebGateway(new InetSocketAddress("0.0.0.0", wsPort), tcpHost, tcpPort);
         gateway.start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
