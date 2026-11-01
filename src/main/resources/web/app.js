@@ -215,7 +215,30 @@ ws = new WebSocket(wsUrl);
     if (text === "/users") { addSystem("Online users are listed in the sidebar."); messageInput.value = ""; return; }
     if (text === "/help") { addSystem("Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."); messageInput.value = ""; return; }
     if (text === "/quit") { logout(); return; }
-    if (send(text.startsWith("/msg ") ? "PM|" + text.slice(5) : "MSG|" + text)) messageInput.value = "";
+const privateMatch = text.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/);
+
+if (text.startsWith("/msg ")) {
+    if (!privateMatch) {
+        addSystem("Usage: /msg username message");
+        return;
+    }
+
+    const target = privateMatch[1];
+    const privateText = privateMatch[2].trim();
+
+    if (!privateText) {
+        addSystem("Please enter a message.");
+        return;
+    }
+
+    if (send(`PM|${target}|${privateText}`)) {
+        messageInput.value = "";
+    }
+} else {
+    if (send(`MSG|${text}`)) {
+        messageInput.value = "";
+    }
+}
   }
   $("sendForm").addEventListener("submit", sendMessage);
   $("publicChatBtn").addEventListener("click", () => {
