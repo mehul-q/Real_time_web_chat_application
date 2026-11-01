@@ -11,7 +11,7 @@ RUN mvn -B package dependency:copy-dependencies \
 FROM eclipse-temurin:17-jre
 
 RUN apt-get update \
-    && apt-get install -y nginx \
+    && apt-get install -y nginx gettext-base \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
