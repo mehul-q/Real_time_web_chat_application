@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Real-time chat</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="loginScreen" class="login-wrap">
+      <form id="loginForm" class="login-card">
+        <div class="brand-mark">RC</div>
+        <h1>Real-time chat</h1>
+        <p class="muted">Log in, or create an account if this is your first time.</p>
+        <label>Username<input id="username" autocomplete="username" minlength="2" maxlength="20" pattern="[A-Za-z0-9_]{2,20}" required placeholder="e.g. alex_01"></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" minlength="4" maxlength="64" required placeholder="4–64 characters"></label>
+        <div id="loginStatus" class="status" role="status"></div>
+        <div class="login-actions">
+          <button id="registerBtn" type="button" class="button secondary">Create account</button>
+          <button type="submit" class="button primary">Log in</button>
+        </div>
+        <p class="tiny">This page connects to the Java chat server through its WebSocket gateway.</p>
+      </form>
+    </section>
+
+    <section id="chatScreen" class="chat-shell hidden">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark small">RC</span><span>Real-time chat <small id="connectedAs">· connected</small></span></div>
+        <div class="top-actions"><span id="connectionBadge" class="connection"><i></i> Connected</span><button id="logoutBtn" class="button secondary compact">Log out</button></div>
+      </header>
+      <div class="chat-layout">
+        <section class="chat-main">
+          <div class="chat-title"><div><h2 id="chatHeading">Public chat</h2><p id="chatSubheading">Messages are visible to everyone online</p></div><button id="publicChatBtn" class="button secondary compact">Public chat</button></div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <div id="filePreview" class="file-preview hidden"></div>
+          <form id="sendForm" class="composer">
+            <input id="messageInput" autocomplete="off" maxlength="2000" placeholder="Write a message…  (use /msg username message for a private message)" aria-label="Message">
+            <input id="fileInput" type="file" hidden>
+            <button id="attachBtn" type="button" class="button secondary attach" title="Attach a file">＋ Attach</button>
+            <button type="submit" class="button primary send">Send</button>
+          </form>
+          <p class="composer-hint">Enter to send · Files up to 2 MB · Private message: <code>/msg username message</code></p>
+        </section>
+        <aside class="sidebar">
+          <section class="side-section"><div class="side-heading"><h3>Online users</h3><span id="onlineCount" class="count">0</span></div><ul id="onlineUsers" class="online-list"></ul></section>
+          <section class="side-section"><div class="side-heading"><h3>Activity</h3></div><ul id="activityList" class="activity-list"></ul></section>
+          <section class="coming-soon"><strong>Coming soon</strong><p>Audio &amp; video calling</p></section>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
