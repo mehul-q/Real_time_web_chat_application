@@ -37,7 +37,13 @@
     setStatus("Connecting to chat server…", false);
     // Same-origin WebSocket; works on localhost and behind an HTTPS reverse proxy.
    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-const wsUrl = `${scheme}//${location.host}/ws`;
+
+const wsUrl =
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1"
+        ? `${scheme}//${location.hostname}:8081/ws`
+        : `${scheme}//${location.host}/ws`;
+
 ws = new WebSocket(wsUrl);
     ws.onopen = () => send(`${register ? "REGISTER" : "LOGIN"}|${user}|${pass}`);
     ws.onmessage = (event) => handleLine(String(event.data));
