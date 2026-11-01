@@ -36,11 +36,9 @@
     loginForm.querySelector('button[type="submit"]').disabled = true;
     setStatus("Connecting to chat server…", false);
     // Same-origin WebSocket; works on localhost and behind an HTTPS reverse proxy.
-    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    // Local setup uses the UI at :8080 and WebSocket gateway at :8081.
-    // For production, configure both behind one HTTPS reverse proxy and use the same host.
-    const wsHost = location.hostname + (location.port === "8080" ? ":8081" : (location.port ? ":" + location.port : ""));
-    ws = new WebSocket(`${scheme}//${wsHost}/`);
+   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+const wsUrl = `${scheme}//${location.host}/ws`;
+ws = new WebSocket(wsUrl);
     ws.onopen = () => send(`${register ? "REGISTER" : "LOGIN"}|${user}|${pass}`);
     ws.onmessage = (event) => handleLine(String(event.data));
     ws.onerror = () => {
