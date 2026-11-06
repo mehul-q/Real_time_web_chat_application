@@ -9,6 +9,8 @@
   const fileInput = $("fileInput"), filePreview = $("filePreview");
   let ws = null, username = "", pendingAuth = false, historyMode = false;
   let selectedFile = null, online = [], reconnecting = false;
+  let peerConnection = null, localStream = null, callPeer = "", callMode = "audio", callState = "idle";
+  let pendingIce = [];
 
   function setStatus(text, error = true) {
     loginStatus.textContent = text || "";
@@ -36,15 +38,11 @@
     loginForm.querySelector('button[type="submit"]').disabled = true;
     setStatus("Connecting to chat server…", false);
     // Same-origin WebSocket; works on localhost and behind an HTTPS reverse proxy.
-   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-
-const wsUrl =
-    location.hostname === "localhost" ||
-    location.hostname === "127.0.0.1"
-        ? `${scheme}//${location.hostname}:8081/ws`
-        : `${scheme}//${location.host}/ws`;
-
-ws = new WebSocket(wsUrl);
+    const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+    // Local setup uses the UI at :8080 and WebSocket gateway at :8081.
+    // For production, configure both behind one HTTPS reverse proxy and use the same host.
+    const wsHost = location.hostname + (location.port === "8080" ? ":8081" : (location.port ? ":" + location.port : ""));
+    ws = new WebSocket(`${scheme}//${wsHost}/`);
     ws.onopen = () => send(`${register ? "REGISTER" : "LOGIN"}|${user}|${pass}`);
     ws.onmessage = (event) => handleLine(String(event.data));
     ws.onerror = () => {
@@ -128,6 +126,9 @@ ws = new WebSocket(wsUrl);
         if (f.length === 4) renderFile(f[1], f[2], f[0], f[3]);
         break;
       }
+      case "RTC":
+        handleRtcMessage(args);
+        break;
       case "ERROR":
         addSystem(args);
         break;
@@ -207,67 +208,30 @@ ws = new WebSocket(wsUrl);
       li.append(dot, label);
       if (name.toLowerCase() === username.toLowerCase()) {
         const you = document.createElement("span"); you.className = "you-tag"; you.textContent = "(you)"; li.append(you);
-      } else li.title = "Click to start a private message";
+      } else {
+        li.title = "Use call buttons to call, or click the name to message";
+        const callActions = document.createElement("span"); callActions.className = "user-call-actions";
+        const audioBtn = document.createElement("button"); audioBtn.type = "button"; audioBtn.className = "user-call-btn"; audioBtn.textContent = "Call"; audioBtn.title = `Audio call ${name}`;
+        const videoBtn = document.createElement("button"); videoBtn.type = "button"; videoBtn.className = "user-call-btn video-call-btn"; videoBtn.textContent = "Video"; videoBtn.title = `Video call ${name}`;
+        audioBtn.addEventListener("click", e => { e.stopPropagation(); startCall(name, "audio"); });
+        videoBtn.addEventListener("click", e => { e.stopPropagation(); startCall(name, "video"); });
+        callActions.append(audioBtn, videoBtn); li.append(callActions);
+      }
       li.addEventListener("dblclick", () => { if (name.toLowerCase() !== username.toLowerCase()) messageInput.value = `/msg ${name} `, messageInput.focus(); });
-      li.addEventListener("click", () => { if (name.toLowerCase() !== username.toLowerCase()) { messageInput.value = `/msg ${name} `; messageInput.focus(); } });
+      li.addEventListener("click", (e) => { if (e.target.closest("button")) return; if (name.toLowerCase() !== username.toLowerCase()) { messageInput.value = `/msg ${name} `; messageInput.focus(); } });
       onlineUsers.append(li);
     });
   }
   function scrollMessages() { messages.scrollTop = messages.scrollHeight; }
   function sendMessage(e) {
     e.preventDefault();
-
     const text = messageInput.value.trim();
-
     if (!text) return;
-
-    if (text === "/users") {
-        addSystem("Online users are listed in the sidebar.");
-        messageInput.value = "";
-        return;
-    }
-
-    if (text === "/help") {
-        addSystem(
-            "Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."
-        );
-        messageInput.value = "";
-        return;
-    }
-
-    if (text === "/quit") {
-        logout();
-        return;
-    }
-
-    // Check whether this is a private message.
-    const privateMatch = text.match(/^\/msg\s+(\S+)\s+([\s\S]+)$/);
-
-    if (text.startsWith("/msg ")) {
-        if (!privateMatch) {
-            addSystem("Usage: /msg username message");
-            return;
-        }
-
-        const target = privateMatch[1];
-        const privateText = privateMatch[2].trim();
-
-        if (!privateText) {
-            addSystem("Please enter a message.");
-            return;
-        }
-
-        // Send private message to the server.
-        if (send(`PM|${target}|${privateText}`)) {
-            messageInput.value = "";
-        }
-    } else {
-        // Send public message to everyone.
-        if (send(`MSG|${text}`)) {
-            messageInput.value = "";
-        }
-    }
-}
+    if (text === "/users") { addSystem("Online users are listed in the sidebar."); messageInput.value = ""; return; }
+    if (text === "/help") { addSystem("Send a public message, or use /msg username message for a private message. Use Attach to share a file (up to 2 MB)."); messageInput.value = ""; return; }
+    if (text === "/quit") { logout(); return; }
+    if (send(text.startsWith("/msg ") ? "PM|" + text.slice(5) : "MSG|" + text)) messageInput.value = "";
+  }
   $("sendForm").addEventListener("submit", sendMessage);
   $("publicChatBtn").addEventListener("click", () => {
     $("chatHeading").textContent = "Public chat";
@@ -307,6 +271,7 @@ ws = new WebSocket(wsUrl);
     try { await uploadFile(); } catch (err) { addSystem(err.message || "File upload failed."); }
   });
   function logout() {
+    if (callState !== "idle") endCall(false);
     if (ws && ws.readyState === WebSocket.OPEN) send("QUIT");
     if (ws) ws.close();
     ws = null; username = ""; pendingAuth = false;
@@ -316,6 +281,117 @@ ws = new WebSocket(wsUrl);
     selectedFile = null; filePreview.classList.add("hidden");
   }
   $("logoutBtn").addEventListener("click", logout);
+  // WebRTC media travels peer-to-peer; the Java WebSocket gateway only relays signaling.
+  const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+  const callOverlay = $("callOverlay"), callTitle = $("callTitle"), callStatus = $("callStatus");
+  const incomingCallActions = $("incomingCallActions"), activeCallActions = $("activeCallActions");
+  const localVideo = $("localVideo"), remoteVideo = $("remoteVideo");
+  function showCall() { callOverlay.classList.remove("hidden"); }
+  function setCallStatus(text) { callStatus.textContent = text; }
+  function rtcSend(action, target, payload) { return send(`RTC|${action}|${target}${payload === undefined ? "" : `|${payload}`}`); }
+  function encodeSignal(value) { const bytes = new TextEncoder().encode(JSON.stringify(value)); let binary = ""; bytes.forEach(b => binary += String.fromCharCode(b)); return btoa(binary); }
+  function decodeSignal(value) { const binary = atob(value); const bytes = Uint8Array.from(binary, c => c.charCodeAt(0)); return JSON.parse(new TextDecoder().decode(bytes)); }
+
+  async function startCall(target, mode) {
+    if (callState !== "idle") { addSystem("Finish your current call before starting another."); return; }
+    callPeer = target; callMode = mode; callState = "calling"; pendingIce = [];
+    callTitle.textContent = `${mode === "video" ? "Video" : "Audio"} call with ${target}`;
+    setCallStatus(`Calling ${target}…`); incomingCallActions.classList.add("hidden"); activeCallActions.classList.add("hidden");
+    $("cameraCallBtn").classList.toggle("hidden", mode !== "video"); remoteVideo.classList.toggle("audio-only", mode !== "video"); showCall();
+    rtcSend("CALL", target, mode);
+  }
+
+  async function preparePeerConnection(withMedia) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("Camera/microphone access requires HTTPS or localhost in a supported browser.");
+    if (peerConnection) peerConnection.close();
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    peerConnection.onicecandidate = event => { if (event.candidate && callPeer) rtcSend("ICE", callPeer, encodeSignal(event.candidate)); };
+    peerConnection.ontrack = event => { remoteVideo.srcObject = event.streams[0]; remoteVideo.play().catch(() => {}); };
+    peerConnection.onconnectionstatechange = () => {
+      if (peerConnection && ["failed", "disconnected"].includes(peerConnection.connectionState)) setCallStatus("Connection interrupted. Check network or TURN configuration.");
+      if (peerConnection && peerConnection.connectionState === "connected") setCallStatus(`Connected with ${callPeer}`);
+    };
+    const constraints = { audio: true, video: callMode === "video" ? { facingMode: "user" } : false };
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+    localVideo.srcObject = localStream; localVideo.classList.toggle("hidden", callMode !== "video");
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    return peerConnection;
+  }
+
+  async function acceptCall() {
+    if (callState !== "incoming") return;
+    callState = "connecting"; incomingCallActions.classList.add("hidden"); setCallStatus("Connecting…");
+    try {
+      await preparePeerConnection(true);
+      rtcSend("ACCEPT", callPeer);
+      // The caller sends the offer after receiving ACCEPTED.
+    } catch (err) { addSystem(`Could not access microphone/camera: ${err.message || err}`); endCall(true); }
+  }
+
+  async function handleRtcMessage(args) {
+    const f = args.split("|", 3); const action = (f[0] || "").toUpperCase();
+    const sender = f[1] || ""; const payload = f[2] || "";
+    try {
+      switch (action) {
+        case "INCOMING":
+          if (callState !== "idle") { rtcSend("REJECT", sender); return; }
+          callPeer = sender; callMode = payload === "video" ? "video" : "audio"; callState = "incoming";
+          callTitle.textContent = `${callMode === "video" ? "Incoming video call" : "Incoming audio call"} from ${sender}`;
+          setCallStatus(`${sender} is calling you…`); incomingCallActions.classList.remove("hidden"); activeCallActions.classList.add("hidden");
+          remoteVideo.classList.toggle("audio-only", callMode !== "video"); localVideo.classList.add("hidden"); showCall(); break;
+        case "RINGING": setCallStatus(`Ringing ${sender}…`); break;
+        case "ACCEPTED":
+          // Caller is now allowed to negotiate. The callee has already requested local media.
+          if (callState !== "calling") break;
+          callState = "connecting"; await preparePeerConnection(true);
+          { const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer); rtcSend("OFFER", callPeer, encodeSignal(peerConnection.localDescription)); }
+          activeCallActions.classList.remove("hidden"); setCallStatus(`Connecting to ${sender}…`); break;
+        case "ACCEPTED_BY_YOU":
+          activeCallActions.classList.remove("hidden"); setCallStatus(`Connecting to ${callPeer}…`); break;
+        case "OFFER":
+          if (!peerConnection) await preparePeerConnection(true);
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(decodeSignal(payload)));
+          for (const candidate of pendingIce) await peerConnection.addIceCandidate(candidate); pendingIce = [];
+          { const answer = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answer); rtcSend("ANSWER", callPeer, encodeSignal(peerConnection.localDescription)); }
+          activeCallActions.classList.remove("hidden"); setCallStatus(`Connecting to ${callPeer}…`); break;
+        case "ANSWER":
+          if (peerConnection) { await peerConnection.setRemoteDescription(new RTCSessionDescription(decodeSignal(payload))); for (const candidate of pendingIce) await peerConnection.addIceCandidate(candidate); pendingIce = []; }
+          break;
+        case "ICE":
+          if (!peerConnection) break;
+          { const candidate = new RTCIceCandidate(decodeSignal(payload)); if (peerConnection.remoteDescription) await peerConnection.addIceCandidate(candidate); else pendingIce.push(candidate); }
+          break;
+        case "REJECTED": addSystem(`${sender} declined the call.`); resetCall(); break;
+        case "ENDED": addSystem(`${sender} ended the call.`); resetCall(); break;
+        case "ERROR": addSystem(sender || payload || "Call error."); resetCall(); break;
+      }
+    } catch (err) { addSystem(`Call failed: ${err.message || err}`); endCall(true); }
+  }
+
+  function resetCall() {
+    if (peerConnection) { peerConnection.ontrack = null; peerConnection.onicecandidate = null; peerConnection.close(); }
+    peerConnection = null;
+    if (localStream) localStream.getTracks().forEach(track => track.stop());
+    localStream = null; localVideo.srcObject = null; remoteVideo.srcObject = null;
+    callPeer = ""; callState = "idle"; pendingIce = [];
+    incomingCallActions.classList.add("hidden"); activeCallActions.classList.add("hidden"); callOverlay.classList.add("hidden");
+    $("muteCallBtn").textContent = "Mute mic"; $("cameraCallBtn").textContent = "Turn camera off";
+  }
+  function endCall(notify = true) { if (notify && callPeer) rtcSend("END", callPeer); resetCall(); }
+  $("acceptCallBtn").addEventListener("click", acceptCall);
+  $("rejectCallBtn").addEventListener("click", () => { if (callPeer) rtcSend("REJECT", callPeer); resetCall(); });
+  $("endCallBtn").addEventListener("click", () => endCall(true));
+  $("closeCallBtn").addEventListener("click", () => { if (callState !== "idle") endCall(true); else resetCall(); });
+  $("muteCallBtn").addEventListener("click", () => {
+    if (!localStream) return; const track = localStream.getAudioTracks()[0]; if (!track) return;
+    track.enabled = !track.enabled; $("muteCallBtn").textContent = track.enabled ? "Mute mic" : "Unmute mic";
+  });
+  $("cameraCallBtn").addEventListener("click", () => {
+    if (!localStream) return; const track = localStream.getVideoTracks()[0]; if (!track) return;
+    track.enabled = !track.enabled; $("cameraCallBtn").textContent = track.enabled ? "Turn camera off" : "Turn camera on";
+  });
+  window.addEventListener("beforeunload", () => { if (callState !== "idle") endCall(true); });
+
   messages.innerHTML = '<div class="empty-state">No messages yet.<br>Say hello to start the conversation.</div>';
   setConnection(false);
 })(); 
