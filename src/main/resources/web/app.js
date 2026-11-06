@@ -39,10 +39,17 @@
     setStatus("Connecting to chat server…", false);
     // Same-origin WebSocket; works on localhost and behind an HTTPS reverse proxy.
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    // Local setup uses the UI at :8080 and WebSocket gateway at :8081.
-    // For production, configure both behind one HTTPS reverse proxy and use the same host.
-    const wsHost = location.hostname + (location.port === "8080" ? ":8081" : (location.port ? ":" + location.port : ""));
-    ws = new WebSocket(`${scheme}//${wsHost}/`);
+
+    const isLocal =
+      location.hostname === "localhost" ||
+      location.hostname === "127.0.0.1" ||
+      location.port === "8080";
+
+    const wsUrl = isLocal
+      ? `${scheme}//${location.hostname}:8081/`
+      : `${scheme}//${location.host}/ws`;
+
+    ws = new WebSocket(wsUrl);
     ws.onopen = () => send(`${register ? "REGISTER" : "LOGIN"}|${user}|${pass}`);
     ws.onmessage = (event) => handleLine(String(event.data));
     ws.onerror = () => {
@@ -154,8 +161,8 @@
     if (Number.isNaN(date.getTime())) return "";
     const today = new Date();
     return date.toDateString() === today.toDateString()
-      ? date.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})
-      : date.toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"});
+      ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
   function addMessage(sender, text, ms, mine, isPrivate) {
     const empty = messages.querySelector(".empty-state"); if (empty) empty.remove();
@@ -306,7 +313,7 @@
     if (peerConnection) peerConnection.close();
     peerConnection = new RTCPeerConnection(rtcConfig);
     peerConnection.onicecandidate = event => { if (event.candidate && callPeer) rtcSend("ICE", callPeer, encodeSignal(event.candidate)); };
-    peerConnection.ontrack = event => { remoteVideo.srcObject = event.streams[0]; remoteVideo.play().catch(() => {}); };
+    peerConnection.ontrack = event => { remoteVideo.srcObject = event.streams[0]; remoteVideo.play().catch(() => { }); };
     peerConnection.onconnectionstatechange = () => {
       if (peerConnection && ["failed", "disconnected"].includes(peerConnection.connectionState)) setCallStatus("Connection interrupted. Check network or TURN configuration.");
       if (peerConnection && peerConnection.connectionState === "connected") setCallStatus(`Connected with ${callPeer}`);
