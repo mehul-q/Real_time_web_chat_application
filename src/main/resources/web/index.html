@@ -45,11 +45,19 @@
         <aside class="sidebar">
           <section class="side-section"><div class="side-heading"><h3>Online users</h3><span id="onlineCount" class="count">0</span></div><ul id="onlineUsers" class="online-list"></ul></section>
           <section class="side-section"><div class="side-heading"><h3>Activity</h3></div><ul id="activityList" class="activity-list"></ul></section>
-          <section class="coming-soon"><strong>Coming soon</strong><p>Audio &amp; video calling</p></section>
+          <section class="coming-soon"><strong>Audio &amp; video calls</strong><p>Use the Call or Video buttons beside an online user.</p></section>
         </aside>
       </div>
     </section>
   </main>
+  <section id="callOverlay" class="call-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="callTitle">
+    <div class="call-dialog">
+      <div class="call-dialog-head"><div><h2 id="callTitle">Call</h2><p id="callStatus" class="call-status">Connecting…</p></div><button id="closeCallBtn" class="button secondary compact" type="button" aria-label="Close call">×</button></div>
+      <div id="incomingCallActions" class="call-actions hidden"><button id="acceptCallBtn" class="button primary" type="button">Accept</button><button id="rejectCallBtn" class="button secondary" type="button">Reject</button></div>
+      <div id="callVideos" class="call-videos"><video id="remoteVideo" class="call-video remote-video" autoplay playsinline></video><video id="localVideo" class="call-video local-video" autoplay playsinline muted></video></div>
+      <div id="activeCallActions" class="call-actions hidden"><button id="muteCallBtn" class="button secondary" type="button">Mute mic</button><button id="cameraCallBtn" class="button secondary" type="button">Turn camera off</button><button id="endCallBtn" class="button danger" type="button">End call</button></div>
+    </div>
+  </section>
   <script src="/app.js"></script>
 </body>
 </html>
